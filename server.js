@@ -1142,10 +1142,10 @@ app.post("/webhook/helius", async (req, res) => {
         console.log(
           `Alert sent for ${mint}`
         );
-      } else {
-        console.log(
-          `Mint ${mint} did not pass filters`
-        );
+        } else {
+  console.log(
+    `Mint ${mint} did not pass filters | stage=${result.stage || "unknown"} | reasons=${JSON.stringify(result.reasons || [])}`
+  );
       }
     }
   } catch (error) {
