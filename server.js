@@ -98,59 +98,7 @@ app.get("/filters", (req, res) => {
     filters: FILTERS
   });
 });
-app.get("/holders-test", async (req, res) => {
-  const mint =
-    String(req.query.mint || "").trim();
 
-  if (!mint) {
-    return res.status(400).json({
-      success: false,
-      error: "Missing mint address"
-    });
-  }
-
-  try {
-    const result = await heliusRpc(
-      "getTokenAccounts",
-      {
-        mint,
-        page: 1,
-        limit: 1000,
-        displayOptions: {}
-      }
-    );
-
-    const accounts =
-      result?.token_accounts || [];
-
-    const owners = new Set();
-
-    for (const account of accounts) {
-      if (account?.owner && Number(account?.amount || 0) > 0) {
-        owners.add(account.owner);
-      }
-    }
-
-    res.json({
-      success: true,
-      mint,
-      tokenAccountsReturned: accounts.length,
-      uniqueHoldersInFirstPage: owners.size,
-      sampleHolders:
-        Array.from(owners).slice(0, 10)
-    });
-  } catch (error) {
-    console.error(
-      "Holder test error:",
-      error.message
-    );
-
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
 /*
 ==================================================
 TELEGRAM
