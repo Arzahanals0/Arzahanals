@@ -1121,7 +1121,47 @@ app.post("/webhook/helius", async (req, res) => {
         continue;
       }
 
-      processedMints.add(mint);
+    console.log("New token mint detected:", mint);
+
+async function retryAnalysis(mint, attempt = 1) {
+  const result = await analyzeToken(mint);
+
+  if (result.success && result.passed) {
+    processedMints.add(mint);
+
+    const message = buildTelegramAlert(result);
+    await sendTelegram(message);
+
+    console.log(`Alert sent for ${mint}`);
+    return;
+  }
+
+  const noDexPair =
+    result.success &&
+    result.stage === "preliminary" &&
+    Array.isArray(result.reasons) &&
+    result.reasons.includes("No Solana DEX pair found");
+
+  if (noDexPair && attempt < 10) {
+    console.log(
+      `No DEX pair yet for ${mint} — retry ${attempt}/10 in 30 seconds`
+    );
+
+    setTimeout(() => {
+      retryAnalysis(mint, attempt + 1);
+    }, 30000);
+
+    return;
+  }
+
+  processedMints.add(mint);
+
+  console.log(
+    `Mint ${mint} did not pass filters | stage=${result.stage || "unknown"} | reasons=${JSON.stringify(result.reasons || [])}`
+  );
+}
+
+retryAnalysis(mint);
 
       console.log(
         `Analyzing mint: ${mint}`
