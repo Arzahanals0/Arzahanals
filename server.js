@@ -903,7 +903,12 @@ app.post(
 
       for (
         const event of events
-      ) {
+      )
+      console.log(
+  "HELIUS PAYLOAD:",
+  JSON.stringify(event, null, 2)
+);
+      {
         const transfer =
           Array.isArray(
             event.transferTokens
