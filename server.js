@@ -12,8 +12,8 @@ const TELEGRAM_CHAT_ID = (process.env.TELEGRAM_CHAT_ID || "").trim();
 const FILTERS = {
   ageMinMinutes: 1,
   ageMaxMinutes: 10,
-  marketCapMin: 1000,
-  marketCapMax: 15000,
+  marketCapMin: 500,
+  marketCapMax: 5000,
   liquidityMin: 5000,
   liquidityMax: 20000,
   tradersMin: 10,
@@ -24,12 +24,12 @@ const FILTERS = {
   top10MaxPercent: 40,
   supplyMin: 900_000_000,
   supplyMax: 1_000_000_000,
-  riskMin: 20,
+  riskMin: 0,
   riskMax: 55,
   lpLockedRequired: true,
   solanaRequired: true,
   pumpRequired: true,
-  whaleMinSupplyPercent: 1
+  whaleMinSupplyPercent: 0
 };
 
 const processedMints = new Set();
@@ -618,7 +618,7 @@ function checkPreliminaryFilters(
       FILTERS.ageMaxMinutes
   ) {
     reasons.push(
-      "Age outside 5-10 minutes"
+      "Age outside 1-10 minutes"
     );
   }
 
@@ -629,7 +629,7 @@ function checkPreliminaryFilters(
       FILTERS.marketCapMax
   ) {
     reasons.push(
-      "Market cap outside $5k-$15k"
+      "Market cap outside $500-$5k"
     );
   }
 
@@ -640,7 +640,7 @@ function checkPreliminaryFilters(
       FILTERS.liquidityMax
   ) {
     reasons.push(
-      "Liquidity outside $10k-$20k"
+      "Liquidity outside $5k-$20k"
     );
   }
 
@@ -868,7 +868,7 @@ function checkAdvancedFilters(
       FILTERS.riskMax
   ) {
     reasons.push(
-      "Risk score outside 40-55"
+      "Risk score outside 0-55"
     );
   }
 
@@ -1143,9 +1143,9 @@ app.post("/webhook/helius", async (req, res) => {
           `Alert sent for ${mint}`
         );
       } else {
-        console.log(
-          `Mint ${mint} did not pass filters`
-        );
+  console.log(
+    `Mint ${mint} did not pass filters | stage=${result.stage || "unknown"} | reasons=${JSON.stringify(result.reasons || [])}`
+  );
       }
     }
   } catch (error) {
