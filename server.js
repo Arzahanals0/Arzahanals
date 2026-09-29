@@ -16,7 +16,7 @@ const FILTERS = {
   marketCapMax: 5000,
   liquidityMin: 10000,
   liquidityMax: 20000,
-  tradersMin: 100,
+  tradersMin: 0,
   tradersMax: 500,
   whalesMin: 0,
   whalesMax: 5,
