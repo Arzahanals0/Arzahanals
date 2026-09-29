@@ -10,12 +10,12 @@ const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
 const TELEGRAM_CHAT_ID = (process.env.TELEGRAM_CHAT_ID || "").trim();
 
 const FILTERS = {
-  ageMinMinutes: 1,
+  ageMinMinutes: 0,
   ageMaxMinutes: 7,
-  marketCapMin: 500,
+  marketCapMin: 100,
   marketCapMax: 5000,
-  liquidityMin: 10000,
-  liquidityMax: 20000,
+  liquidityMin: 100,
+  liquidityMax: 2000,
   tradersMin: 0,
   tradersMax: 500,
   whalesMin: 0,
