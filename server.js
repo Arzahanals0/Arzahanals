@@ -18,13 +18,13 @@ const FILTERS = {
   liquidityMax: 20000,
   tradersMin: 100,
   tradersMax: 500,
-  whalesMin: 1,
+  whalesMin: 0,
   whalesMax: 5,
-  top10MinPercent: 30,
+  top10MinPercent: 0,
   top10MaxPercent: 40,
   supplyMin: 900_000_000,
   supplyMax: 1_000_000_000,
-  riskMin: 40,
+  riskMin: 0,
   riskMax: 55,
   lpLockedRequired: true,
   solanaRequired: true,
@@ -618,7 +618,7 @@ function checkPreliminaryFilters(
       FILTERS.ageMaxMinutes
   ) {
     reasons.push(
-      "Age outside 5-10 minutes"
+      "Age outside 1-10 minutes"
     );
   }
 
