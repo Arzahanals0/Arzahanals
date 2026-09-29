@@ -908,6 +908,7 @@ app.post(
   "HELIUS PAYLOAD:",
   JSON.stringify(event, null, 2)
 );
+      continue;
       {
         const transfer =
           Array.isArray(
