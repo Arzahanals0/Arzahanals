@@ -7,13 +7,24 @@ app.use(express.json({ limit: "2mb" }));
 
 const PORT = process.env.PORT || 3000;
 
-const TELEGRAM_BOT_TOKEN = (process.env.TELEGRAM_BOT_TOKEN || "").trim();
-const TELEGRAM_CHAT_ID = (process.env.TELEGRAM_CHAT_ID || "").trim();
-const HELIUS_API_KEY = (process.env.HELIUS_API_KEY || "").trim();
+const TELEGRAM_BOT_TOKEN =
+  (process.env.TELEGRAM_BOT_TOKEN || "").trim();
+
+const TELEGRAM_CHAT_ID =
+  (process.env.TELEGRAM_CHAT_ID || "").trim();
+
+const HELIUS_API_KEY =
+  (process.env.HELIUS_API_KEY || "").trim();
+
+/*
+==================================================
+FILTERS
+==================================================
+*/
 
 const FILTERS = {
-  ageMinMinutes: 5,
-  ageMaxMinutes: 10,
+  ageMinMinutes: 1,
+  ageMaxMinutes: 8,
 
   marketCapMin: 500,
   marketCapMax: 5000,
@@ -43,11 +54,26 @@ const FILTERS = {
   whaleMinSupplyPercent: 1
 };
 
+/*
+==================================================
+STATE
+==================================================
+*/
+
+const processedMints = new Set();
+
+/*
+==================================================
+BASIC ROUTES
+==================================================
+*/
+
 app.get("/", (req, res) => {
   res.json({
     success: true,
     name: "Solana Early Launch Analyzer",
-    status: "online"
+    status: "online",
+    version: "3.0"
   });
 });
 
@@ -61,9 +87,7 @@ app.get("/health", (req, res) => {
 app.get("/telegram-status", (req, res) => {
   res.json({
     tokenConfigured: Boolean(TELEGRAM_BOT_TOKEN),
-    chatIdConfigured: Boolean(TELEGRAM_CHAT_ID),
-    tokenLength: TELEGRAM_BOT_TOKEN.length,
-    chatIdLength: TELEGRAM_CHAT_ID.length
+    chatIdConfigured: Boolean(TELEGRAM_CHAT_ID)
   });
 });
 
@@ -73,6 +97,19 @@ app.get("/helius-status", (req, res) => {
     heliusConfigured: Boolean(HELIUS_API_KEY)
   });
 });
+
+app.get("/filters", (req, res) => {
+  res.json({
+    success: true,
+    filters: FILTERS
+  });
+});
+
+/*
+==================================================
+TELEGRAM
+==================================================
+*/
 
 async function sendTelegram(message) {
   if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
@@ -90,7 +127,7 @@ async function sendTelegram(message) {
       disable_web_page_preview: true
     },
     {
-      timeout: 10000
+      timeout: 15000
     }
   );
 
@@ -114,6 +151,8 @@ app.get("/test-telegram", async (req, res) => {
       message: "Telegram message sent"
     });
   } catch (error) {
+    console.error("Telegram error:", error.message);
+
     res.status(500).json({
       success: false,
       error: error.message
@@ -121,8 +160,340 @@ app.get("/test-telegram", async (req, res) => {
   }
 });
 
+/*
+==================================================
+HELIUS DAS
+==================================================
+*/
+
+async function heliusRpc(method, params) {
+  if (!HELIUS_API_KEY) {
+    throw new Error("HELIUS_API_KEY is missing");
+  }
+
+  const url =
+    `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`;
+
+  const response = await axios.post(
+    url,
+    {
+      jsonrpc: "2.0",
+      id: "solana-early-launch-analyzer",
+      method,
+      params
+    },
+    {
+      headers: {
+        "Content-Type": "application/json"
+      },
+      timeout: 15000
+    }
+  );
+
+  if (response.data?.error) {
+    throw new Error(
+      JSON.stringify(response.data.error)
+    );
+  }
+
+  return response.data?.result || null;
+}
+
+/*
+==================================================
+GET TOKEN ASSET
+==================================================
+*/
+
+async function getTokenAsset(mint) {
+  return heliusRpc("getAsset", {
+    id: mint,
+    displayOptions: {
+      showFungible: true
+    }
+  });
+}
+
+/*
+==================================================
+DEXSCREENER
+==================================================
+*/
+
+async function getDexData(mint) {
+  const url =
+    `https://api.dexscreener.com/latest/dex/tokens/${mint}`;
+
+  const response = await axios.get(url, {
+    timeout: 15000
+  });
+
+  const pairs = Array.isArray(response.data?.pairs)
+    ? response.data.pairs
+    : [];
+
+  const solanaPairs = pairs.filter(
+    pair => pair.chainId === "solana"
+  );
+
+  if (!solanaPairs.length) {
+    return null;
+  }
+
+  solanaPairs.sort(
+    (a, b) =>
+      Number(b.liquidity?.usd || 0) -
+      Number(a.liquidity?.usd || 0)
+  );
+
+  const pair = solanaPairs[0];
+
+  const createdAt =
+    Number(pair.pairCreatedAt || 0);
+
+  const ageMinutes = createdAt
+    ? (Date.now() - createdAt) / 60000
+    : null;
+
+  return {
+    chainId: pair.chainId || null,
+
+    dexId: pair.dexId || null,
+
+    pairAddress:
+      pair.pairAddress || null,
+
+    pairUrl:
+      pair.url || null,
+
+    baseToken:
+      pair.baseToken || null,
+
+    quoteToken:
+      pair.quoteToken || null,
+
+    priceUsd:
+      Number(pair.priceUsd || 0),
+
+    marketCap:
+      Number(
+        pair.marketCap ||
+        pair.fdv ||
+        0
+      ),
+
+    fdv:
+      Number(pair.fdv || 0),
+
+    liquidity:
+      Number(pair.liquidity?.usd || 0),
+
+    volume5m:
+      Number(pair.volume?.m5 || 0),
+
+    volume1h:
+      Number(pair.volume?.h1 || 0),
+
+    buys5m:
+      Number(pair.txns?.m5?.buys || 0),
+
+    sells5m:
+      Number(pair.txns?.m5?.sells || 0),
+
+    buys1h:
+      Number(pair.txns?.h1?.buys || 0),
+
+    sells1h:
+      Number(pair.txns?.h1?.sells || 0),
+
+    ageMinutes,
+
+    priceChange5m:
+      Number(pair.priceChange?.m5 || 0),
+
+    priceChange1h:
+      Number(pair.priceChange?.h1 || 0),
+
+    labels:
+      Array.isArray(pair.labels)
+        ? pair.labels
+        : []
+  };
+}
+
+/*
+==================================================
+TOKEN DATA NORMALIZER
+==================================================
+*/
+
+function normalizeTokenData(asset, dex) {
+  const tokenInfo =
+    asset?.token_info || {};
+
+  const metadata =
+    asset?.content?.metadata || {};
+
+  const supply =
+    Number(tokenInfo.supply || 0);
+
+  const decimals =
+    Number(tokenInfo.decimals || 0);
+
+  const price =
+    Number(
+      tokenInfo.price_info?.price_per_token ||
+      dex?.priceUsd ||
+      0
+    );
+
+  return {
+    name:
+      metadata.name ||
+      "Unknown",
+
+    symbol:
+      metadata.symbol ||
+      "UNKNOWN",
+
+    supply,
+
+    decimals,
+
+    price,
+
+    tokenProgram:
+      tokenInfo.token_program || null,
+
+    interface:
+      asset?.interface || null,
+
+    mintAuthority:
+      asset?.authorities?.[0]?.address ||
+      null,
+
+    metadataUri:
+      asset?.content?.json_uri ||
+      null,
+
+    image:
+      asset?.content?.links?.image ||
+      null
+  };
+}
+
+/*
+==================================================
+PRELIMINARY FILTER
+==================================================
+*/
+
+function checkPreliminaryFilters(token, dex) {
+  const reasons = [];
+
+  if (!dex) {
+    reasons.push("No Solana DEX pair found");
+    return {
+      passed: false,
+      reasons
+    };
+  }
+
+  if (
+    dex.ageMinutes === null ||
+    dex.ageMinutes < FILTERS.ageMinMinutes ||
+    dex.ageMinutes > FILTERS.ageMaxMinutes
+  ) {
+    reasons.push("Age outside 5-10 minutes");
+  }
+
+  if (
+    dex.marketCap < FILTERS.marketCapMin ||
+    dex.marketCap > FILTERS.marketCapMax
+  ) {
+    reasons.push("Market cap outside range");
+  }
+
+  if (
+    dex.liquidity < FILTERS.liquidityMin ||
+    dex.liquidity > FILTERS.liquidityMax
+  ) {
+    reasons.push("Liquidity outside range");
+  }
+
+  if (
+    token.supply < FILTERS.supplyMin ||
+    token.supply > FILTERS.supplyMax
+  ) {
+    reasons.push("Supply outside range");
+  }
+
+  return {
+    passed: reasons.length === 0,
+    reasons
+  };
+}
+
+/*
+==================================================
+ANALYZE TOKEN
+==================================================
+*/
+
+async function analyzeToken(mint) {
+  const [asset, dex] = await Promise.all([
+    getTokenAsset(mint),
+    getDexData(mint)
+  ]);
+
+  if (!asset) {
+    throw new Error("Helius returned no asset");
+  }
+
+  const token =
+    normalizeTokenData(asset, dex);
+
+  const preliminary =
+    checkPreliminaryFilters(
+      token,
+      dex
+    );
+
+  return {
+    mint,
+
+    token,
+
+    dex,
+
+    preliminary,
+
+    /*
+      These are intentionally NOT guessed.
+      They will be populated by the
+      on-chain holder/security layer.
+    */
+
+    traders: null,
+    whales: null,
+    top10Percent: null,
+    riskScore: null,
+    lpLocked: null,
+
+    devSold: null,
+    dexPaid: null
+  };
+}
+
+/*
+==================================================
+MANUAL ANALYZE ENDPOINT
+==================================================
+*/
+
 app.get("/analyze", async (req, res) => {
-  const mint = String(req.query.mint || "").trim();
+  const mint =
+    String(req.query.mint || "").trim();
 
   if (!mint) {
     return res.status(400).json({
@@ -131,24 +502,19 @@ app.get("/analyze", async (req, res) => {
     });
   }
 
-  res.json({
-    success: true,
-    message: "Analysis engine endpoint ready",
-    mint,
-    filters: FILTERS
-  });
-});
-
-app.post("/webhook/helius", async (req, res) => {
   try {
-    console.log("Helius webhook received:", JSON.stringify(req.body));
+    const analysis =
+      await analyzeToken(mint);
 
     res.json({
       success: true,
-      received: true
+      analysis
     });
   } catch (error) {
-    console.error("Webhook error:", error);
+    console.error(
+      "Analyze error:",
+      error.message
+    );
 
     res.status(500).json({
       success: false,
@@ -157,18 +523,168 @@ app.post("/webhook/helius", async (req, res) => {
   }
 });
 
+/*
+==================================================
+HELIUS TOKEN MINT WEBHOOK
+==================================================
+*/
+
+app.post("/webhook/helius", async (req, res) => {
+  try {
+    const events =
+      Array.isArray(req.body)
+        ? req.body
+        : [req.body];
+
+    console.log(
+      `Helius webhook received: ${events.length} event(s)`
+    );
+
+    /*
+      Respond immediately so Helius does not
+      wait for our analysis.
+    */
+
+    res.status(200).json({
+      success: true,
+      received: events.length
+    });
+
+    /*
+      Process events after response.
+    */
+
+    for (const event of events) {
+      const transfer =
+        Array.isArray(event.transferTokens)
+          ? event.transferTokens[0]
+          : null;
+
+      const mint =
+        transfer?.mint ||
+        event?.mint ||
+        null;
+
+      if (!mint) {
+        console.log(
+          "Webhook event had no mint address"
+        );
+
+        continue;
+      }
+
+      if (processedMints.has(mint)) {
+        console.log(
+          "Already processed:",
+          mint
+        );
+
+        continue;
+      }
+
+      processedMints.add(mint);
+
+      console.log(
+        "New token mint detected:",
+        mint
+      );
+
+      try {
+        const analysis =
+          await analyzeToken(mint);
+
+        console.log(
+          "Token analysis:",
+          JSON.stringify(
+            analysis,
+            null,
+            2
+          )
+        );
+
+        /*
+          IMPORTANT:
+          Do NOT send an alert yet.
+
+          We are still missing:
+          - real trader count
+          - real whale count
+          - real top10 concentration
+          - real risk score
+          - real LP lock verification
+
+          Therefore this stage only collects
+          and verifies real market/token data.
+        */
+
+      } catch (analysisError) {
+        console.error(
+          "Token analysis failed:",
+          mint,
+          analysisError.message
+        );
+      }
+    }
+  } catch (error) {
+    console.error(
+      "Webhook error:",
+      error.message
+    );
+
+    /*
+      Response may already have been sent.
+    */
+  }
+});
+
+/*
+==================================================
+START SERVER
+==================================================
+*/
+
 app.listen(PORT, () => {
-  console.log("==========================================");
-  console.log("Solana Early Launch Analyzer");
-  console.log(`Server running on port ${PORT}`);
   console.log(
-    `Helius API key: ${HELIUS_API_KEY ? "CONFIGURED" : "MISSING"}`
+    "=========================================="
   );
+
   console.log(
-    `Telegram bot: ${TELEGRAM_BOT_TOKEN ? "CONFIGURED" : "MISSING"}`
+    "Solana Early Launch Analyzer"
   );
+
   console.log(
-    `Telegram chat ID: ${TELEGRAM_CHAT_ID ? "CONFIGURED" : "MISSING"}`
+    "Version: 3.0"
   );
-  console.log("==========================================");
+
+  console.log(
+    `Server running on port ${PORT}`
+  );
+
+  console.log(
+    `Helius: ${
+      HELIUS_API_KEY
+        ? "CONFIGURED"
+        : "MISSING"
+    }`
+  );
+
+  console.log(
+    `Telegram: ${
+      TELEGRAM_BOT_TOKEN
+        ? "CONFIGURED"
+        : "MISSING"
+    }`
+  );
+
+  console.log(
+    `Telegram Chat ID: ${
+      TELEGRAM_CHAT_ID
+        ? "CONFIGURED"
+        : "MISSING"
+    }`
+  );
+
+  console.log(
+    "=========================================="
+  );
 });
