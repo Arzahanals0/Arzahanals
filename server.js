@@ -23,17 +23,17 @@ FILTERS
 */
 
 const FILTERS = {
-  ageMinMinutes: 5,
-  ageMaxMinutes: 10,
+  ageMinMinutes: 1,
+  ageMaxMinutes: 8,
 
-  marketCapMin: 5000,
-  marketCapMax: 15000,
+  marketCapMin: 500,
+  marketCapMax: 5000,
 
   liquidityMin: 10000,
   liquidityMax: 20000,
 
   tradersMin: 100,
-  tradersMax: 150,
+  tradersMax: 500,
 
   whalesMin: 3,
   whalesMax: 5,
